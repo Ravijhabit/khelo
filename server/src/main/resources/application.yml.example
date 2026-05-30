@@ -1,0 +1,12 @@
+  # Copy this file to application.yml and fill in the real prompt templates.
+  # application.yml is gitignored — never commit the actual prompts.
+  #
+# Format specifiers (%s, %d) are filled at runtime by PromptBuilderService.
+# Analysis prompt receives 10 args; chat prompt receives 15 args — keep the
+# placeholders in the exact order shown or String.format() will throw.
+
+prompt:
+  analysis: |
+    <stance analysis system prompt>
+  chat: |-
+    <coaching chat system prompt>
