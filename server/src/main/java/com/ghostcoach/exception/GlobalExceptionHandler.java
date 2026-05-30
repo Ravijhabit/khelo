@@ -1,5 +1,6 @@
 package com.ghostcoach.exception;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
@@ -14,6 +15,7 @@ import java.util.stream.Collectors;
  * a consistent {@code { "message": "..." }} JSON body regardless of where
  * in the stack the exception was thrown.
  */
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -23,6 +25,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<Map<String, String>> handleApi(ApiException ex) {
+        log.warn("ApiException [status={}] — {}", ex.getStatus(), ex.getMessage());
         return ResponseEntity.status(ex.getStatus())
                 .body(Map.of("message", ex.getMessage()));
     }
@@ -37,6 +40,11 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleRuntime(RuntimeException ex) {
         HttpStatus status = ex.getMessage() != null && ex.getMessage().contains("not found")
                 ? HttpStatus.NOT_FOUND : HttpStatus.BAD_REQUEST;
+        if (status == HttpStatus.NOT_FOUND) {
+            log.warn("RuntimeException [status=404] — {}", ex.getMessage());
+        } else {
+            log.error("RuntimeException [status={}] — {}", status.value(), ex.getMessage(), ex);
+        }
         return ResponseEntity.status(status)
                 .body(Map.of("message", ex.getMessage() != null ? ex.getMessage() : "An error occurred."));
     }
@@ -51,6 +59,7 @@ public class GlobalExceptionHandler {
         String message = ex.getBindingResult().getFieldErrors().stream()
                 .map(e -> e.getField() + ": " + e.getDefaultMessage())
                 .collect(Collectors.joining(", "));
+        log.warn("Validation failed — {}", message);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(Map.of("message", message));
     }
@@ -62,6 +71,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<Map<String, String>> handleFileSize(MaxUploadSizeExceededException ex) {
+        log.warn("File upload rejected — exceeds 5MB limit");
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
                 .body(Map.of("message", "File size exceeds the 5MB limit."));
     }
