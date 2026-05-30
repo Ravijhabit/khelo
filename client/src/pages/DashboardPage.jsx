@@ -6,6 +6,11 @@ import UploadZone from '../components/UploadZone'
 import FeedbackCard from '../components/FeedbackCard'
 import { Sparkles, ArrowRight, Brain } from 'lucide-react'
 
+/**
+ * The primary feature page — stance upload and AI coaching feedback.
+ * Flow: select image → click Analyze → display structured coaching report → optionally navigate to chat.
+ * Session state is local; the feedback is also persisted in the backend so it appears in History.
+ */
 export default function DashboardPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
@@ -15,6 +20,15 @@ export default function DashboardPage() {
   const [sessionId, setSessionId] = useState(null)
   const [error, setError] = useState('')
 
+  /**
+   * Submits the selected image to the backend for Gemini analysis.
+   * Uses FormData to send the file as multipart/form-data — required by Spring's
+   * @RequestParam("image") MultipartFile handler.
+   *
+   * Extracts feedback and session ID from the response so:
+   * - feedback drives the immediate FeedbackCard display
+   * - sessionId enables the "Ask the Coach" navigation without a separate fetch
+   */
   const handleAnalyze = async () => {
     if (!file) return
     setError('')
@@ -35,7 +49,6 @@ export default function DashboardPage() {
 
   return (
     <div className="max-w-3xl mx-auto">
-      {/* Header */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-white">
           Hey, {user?.name?.split(' ')[0]} 👋
@@ -45,7 +58,7 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {/* Player badge */}
+      {/* Player context badge — reminds the player what profile the AI will use */}
       <div className="flex items-center gap-3 mb-6 p-3 bg-gray-900 border border-gray-800 rounded-xl">
         <div className="w-10 h-10 rounded-full bg-indigo-600/20 flex items-center justify-center text-indigo-400 font-bold">
           {user?.name?.[0]?.toUpperCase()}
@@ -56,7 +69,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Upload */}
       <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-4">
         <h2 className="text-base font-semibold text-white mb-4 flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-indigo-400" />
@@ -91,7 +103,7 @@ export default function DashboardPage() {
         </button>
       )}
 
-      {/* Loading skeleton */}
+      {/* Skeleton loader — mirrors the FeedbackCard shape to prevent layout shift */}
       {loading && (
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4 animate-pulse">
           <div className="flex items-center gap-4">
@@ -107,7 +119,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Results */}
       {result && !loading && (
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
           <h2 className="text-base font-semibold text-white mb-5 flex items-center gap-2">
@@ -117,6 +128,7 @@ export default function DashboardPage() {
           <FeedbackCard feedback={result} />
 
           <div className="mt-6 flex gap-3">
+            {/* Navigate to SessionPage where the player can chat with the AI about this report */}
             <button
               onClick={() => navigate(`/sessions/${sessionId}`)}
               className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2 text-sm"

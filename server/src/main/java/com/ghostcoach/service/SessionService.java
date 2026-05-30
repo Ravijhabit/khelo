@@ -18,6 +18,11 @@ import java.nio.file.*;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Orchestrates the full stance analysis lifecycle: image storage, AI invocation,
+ * session persistence, and retrieval. Also serves as the gateway for {@link ChatService}
+ * to fetch raw session entities without duplicating ownership checks.
+ */
 @Service
 @RequiredArgsConstructor
 public class SessionService {
@@ -31,31 +36,50 @@ public class SessionService {
     @Value("${storage.upload-dir}")
     private String uploadDir;
 
+    /**
+     * Creates the upload directory on application startup if it doesn't exist.
+     * Using {@code @PostConstruct} rather than a static initialiser so the
+     * {@code uploadDir} value is already injected when this runs.
+     */
     @PostConstruct
     public void init() throws IOException {
         Files.createDirectories(Paths.get(uploadDir));
     }
 
+    /**
+     * The core feature: validates the uploaded image, saves it to disk, calls the
+     * Gemini Vision API with a personalised prompt, and persists the resulting
+     * coaching session to the database.
+     *
+     * <p>Strengths and areasToImprove are stored as JSON strings in the TEXT column
+     * rather than a child table — avoids a join on every session list fetch and is
+     * sufficient given these arrays are always read together with the session.
+     *
+     * <p>The image filename uses UUID to avoid collisions and prevent path traversal
+     * attacks (the original filename from the client is never used on disk).
+     *
+     * @param email the authenticated player's email (from JWT)
+     * @param file  the uploaded stance image (validated for MIME type here + client-side)
+     * @return {@link SessionResponse} with the nested {@link FeedbackDto} for immediate display
+     */
     public SessionResponse analyze(String email, MultipartFile file) throws IOException {
         User user = getUser(email);
 
-        // Validate file type
         String contentType = file.getContentType();
         if (contentType == null || (!contentType.equals("image/jpeg") && !contentType.equals("image/png"))) {
             throw new RuntimeException("Only JPEG and PNG images are accepted.");
         }
 
-        // Save image to disk
+        // Store image with a UUID name — the original filename is untrusted client input
         String ext = contentType.equals("image/png") ? ".png" : ".jpg";
         String filename = UUID.randomUUID() + ext;
         Path filePath = Paths.get(uploadDir, filename);
         Files.write(filePath, file.getBytes());
 
-        // Build prompt and call Gemini
         String prompt = promptBuilder.buildAnalysisPrompt(user);
         FeedbackDto feedback = geminiService.analyzeStance(file.getBytes(), contentType, prompt);
 
-        // Persist session
+        // Serialize lists as JSON strings for storage in a single TEXT column
         CoachingSession session = CoachingSession.builder()
                 .user(user)
                 .imagePath(filename)
@@ -68,9 +92,17 @@ public class SessionService {
                 .build();
 
         sessionRepository.save(session);
+        // Return with nested FeedbackDto so the frontend can display results immediately
         return SessionResponse.fromWithFeedback(session, feedback);
     }
 
+    /**
+     * Returns all sessions for a player, newest first.
+     * Strengths and areasToImprove remain as JSON strings — the frontend
+     * parses them with {@code JSON.parse()} when rendering session cards.
+     *
+     * @param email authenticated player's email
+     */
     public List<SessionResponse> listSessions(String email) {
         User user = getUser(email);
         return sessionRepository.findByUserOrderByCreatedAtDesc(user)
@@ -79,6 +111,15 @@ public class SessionService {
                 .toList();
     }
 
+    /**
+     * Fetches a single session by ID with ownership enforcement.
+     * {@code findByIdAndUser} is a single query — avoids fetching the session
+     * and then doing a separate ownership check in Java.
+     *
+     * @param email authenticated player's email
+     * @param id    session primary key
+     * @throws RuntimeException (→ 404) if the session doesn't exist or belongs to another user
+     */
     public SessionResponse getSession(String email, Long id) {
         User user = getUser(email);
         CoachingSession session = sessionRepository.findByIdAndUser(id, user)
@@ -86,6 +127,15 @@ public class SessionService {
         return SessionResponse.from(session);
     }
 
+    /**
+     * Reads the stored image file from disk and returns its raw bytes.
+     * Ownership is checked via {@code findByIdAndUser} before the file is read,
+     * so a player cannot access another player's image by guessing an ID.
+     *
+     * @param email authenticated player's email
+     * @param id    session primary key
+     * @return raw image bytes (served with correct MediaType by the controller)
+     */
     public byte[] getSessionImage(String email, Long id) throws IOException {
         User user = getUser(email);
         CoachingSession session = sessionRepository.findByIdAndUser(id, user)
@@ -94,12 +144,21 @@ public class SessionService {
         return Files.readAllBytes(imagePath);
     }
 
+    /**
+     * Returns the raw {@link CoachingSession} entity rather than a DTO.
+     * Used by {@link ChatService} which needs access to the stored JSON strings
+     * (strengths, areasToImprove) to inject them into the chat prompt without re-parsing.
+     *
+     * @param email authenticated player's email
+     * @param id    session primary key
+     */
     public CoachingSession getRawSession(String email, Long id) {
         User user = getUser(email);
         return sessionRepository.findByIdAndUser(id, user)
                 .orElseThrow(() -> new RuntimeException("Session not found."));
     }
 
+    /** Shared user lookup with a consistent 400 error message across all methods. */
     private User getUser(String email) {
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found."));

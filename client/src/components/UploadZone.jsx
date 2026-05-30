@@ -4,18 +4,40 @@ import { Upload, Image, X } from 'lucide-react'
 const MAX_SIZE_MB = 5
 const ALLOWED_TYPES = ['image/jpeg', 'image/png']
 
+/**
+ * Drag-and-drop / click-to-browse file picker with client-side validation.
+ * Validates before calling onFile so the parent never receives an invalid file.
+ * Shows a live preview after selection and lets the player clear their choice.
+ *
+ * @param {Function} onFile - called with the File object on valid selection, or null on clear
+ * @param {boolean}  disabled - disables all interaction during upload processing
+ */
 export default function UploadZone({ onFile, disabled }) {
   const inputRef = useRef(null)
   const [dragging, setDragging] = useState(false)
   const [preview, setPreview] = useState(null)
   const [error, setError] = useState('')
 
+  /**
+   * Client-side guard before sending to the backend.
+   * Matches the server-side constraints (MIME type + 5MB limit) so the
+   * player gets instant feedback rather than waiting for an upload to fail.
+   *
+   * @param {File} file
+   * @returns {string|null} error message, or null if valid
+   */
   const validate = (file) => {
     if (!ALLOWED_TYPES.includes(file.type)) return 'Only JPEG and PNG files are allowed.'
     if (file.size > MAX_SIZE_MB * 1024 * 1024) return `File must be under ${MAX_SIZE_MB}MB.`
     return null
   }
 
+  /**
+   * Runs validation, generates a local object URL for the preview image,
+   * and propagates the file to the parent via onFile.
+   * createObjectURL is used instead of FileReader to avoid encoding the file
+   * into a base64 string just for display purposes.
+   */
   const handleFile = (file) => {
     const err = validate(file)
     if (err) { setError(err); return }
@@ -24,6 +46,10 @@ export default function UploadZone({ onFile, disabled }) {
     onFile(file)
   }
 
+  /**
+   * Handles the browser's native drag-and-drop event.
+   * Only the first dropped file is used — multi-file drop is intentionally ignored.
+   */
   const handleDrop = (e) => {
     e.preventDefault()
     setDragging(false)
@@ -31,6 +57,11 @@ export default function UploadZone({ onFile, disabled }) {
     if (file) handleFile(file)
   }
 
+  /**
+   * Resets the component to its empty state.
+   * Also resets the hidden file input's value so the same file can be re-selected
+   * after clearing (browsers don't fire onChange for the same file otherwise).
+   */
   const clear = () => {
     setPreview(null)
     setError('')
@@ -80,6 +111,7 @@ export default function UploadZone({ onFile, disabled }) {
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 
+      {/* Hidden native file input — triggered programmatically by click on the drop zone */}
       <input
         ref={inputRef}
         type="file"
