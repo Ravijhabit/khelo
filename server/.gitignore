@@ -1,0 +1,18 @@
+target/
+*.class
+*.jar
+*.war
+
+# Local secrets — never commit
+src/main/resources/application-local.properties
+src/main/resources/application.yml
+
+# H2 database files
+*.mv.db
+*.trace.db
+
+# Uploads
+uploads/
+
+# Environment files
+.env
