@@ -1,10 +1,12 @@
 package com.ghostcoach.service;
 
 import com.ghostcoach.dto.*;
+import com.ghostcoach.model.SportProfile;
 import com.ghostcoach.model.User;
 import com.ghostcoach.repository.UserRepository;
 import com.ghostcoach.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -13,6 +15,7 @@ import org.springframework.stereotype.Service;
  * Passwords are never stored in plaintext — BCrypt hashes are persisted instead.
  * Authentication state is carried entirely in the JWT; no server-side sessions exist.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -30,18 +33,25 @@ public class AuthService {
      * @throws RuntimeException if the email is already taken
      */
     public AuthResponse register(RegisterRequest req) {
+        log.info("Registration attempt");
         if (userRepository.existsByEmail(req.getEmail())) {
+            log.warn("Registration rejected — email already registered");
             throw new RuntimeException("Email already registered.");
         }
         User user = User.builder()
                 .name(req.getName())
                 .email(req.getEmail())
                 .passwordHash(passwordEncoder.encode(req.getPassword()))
-                .sport(req.getSport())
-                .position(req.getPosition())
-                .experienceLevel(req.getExperienceLevel())
+                .sportProfiles(req.getSportProfiles().stream()
+                        .map(r -> SportProfile.builder()
+                                .sport(r.getSport())
+                                .position(r.getPosition())
+                                .experienceLevel(r.getExperienceLevel())
+                                .build())
+                        .toList())
                 .build();
         userRepository.save(user);
+        log.info("User registered [userId={}]", user.getId());
         String token = jwtUtil.generateToken(user.getEmail());
         return new AuthResponse(token, UserDto.from(user));
     }
@@ -55,11 +65,17 @@ public class AuthService {
      * @throws RuntimeException with a deliberately vague message on any failure
      */
     public AuthResponse login(LoginRequest req) {
+        log.info("Login attempt");
         User user = userRepository.findByEmail(req.getEmail())
-                .orElseThrow(() -> new RuntimeException("Invalid email or password."));
+                .orElseThrow(() -> {
+                    log.warn("Login failed — credentials invalid");
+                    return new RuntimeException("Invalid email or password.");
+                });
         if (!passwordEncoder.matches(req.getPassword(), user.getPasswordHash())) {
+            log.warn("Login failed — credentials invalid [userId={}]", user.getId());
             throw new RuntimeException("Invalid email or password.");
         }
+        log.info("Login successful [userId={}]", user.getId());
         String token = jwtUtil.generateToken(user.getEmail());
         return new AuthResponse(token, UserDto.from(user));
     }

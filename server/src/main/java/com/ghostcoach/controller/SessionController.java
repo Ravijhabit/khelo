@@ -1,6 +1,7 @@
 package com.ghostcoach.controller;
 
 import com.ghostcoach.dto.SessionResponse;
+import com.ghostcoach.model.SportType;
 import com.ghostcoach.service.SessionService;
 import com.ghostcoach.util.ImageUtil;
 import lombok.RequiredArgsConstructor;
@@ -32,8 +33,15 @@ public class SessionController {
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<SessionResponse> upload(
             @RequestParam("image") MultipartFile file,
+            @RequestParam("sport") String sport,
             Authentication auth) throws IOException {
-        return ResponseEntity.ok(sessionService.analyze(auth.getName(), file));
+        SportType sportType;
+        try {
+            sportType = SportType.valueOf(sport.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new RuntimeException("Invalid sport: " + sport + ". Supported: BADMINTON, CRICKET, BASKETBALL");
+        }
+        return ResponseEntity.ok(sessionService.analyze(auth.getName(), file, sportType));
     }
 
     /**

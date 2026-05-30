@@ -1,6 +1,7 @@
 package com.ghostcoach.dto;
 
 import com.ghostcoach.model.CoachingSession;
+import com.ghostcoach.model.SportType;
 import lombok.Builder;
 import lombok.Data;
 import java.time.LocalDateTime;
@@ -17,6 +18,7 @@ public class SessionResponse {
     private String drillSuggestion;
     private String confidenceLevel;
     private LocalDateTime createdAt;
+    private SportType sport;
     private FeedbackDto feedback;
 
     public static SessionResponse from(CoachingSession session) {
@@ -30,6 +32,7 @@ public class SessionResponse {
                 .drillSuggestion(session.getDrillSuggestion())
                 .confidenceLevel(session.getConfidenceLevel())
                 .createdAt(session.getCreatedAt())
+                .sport(session.getSport())
                 .build();
     }
 

@@ -12,8 +12,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.util.UUID;
 
 /**
@@ -21,7 +19,7 @@ import java.util.UUID;
  *
  * Sets two MDC keys that appear in every subsequent log line for this thread:
  *   - requestId: short UUID identifying this specific HTTP request
- *   - userId:    first 8 hex chars of SHA-256(email) — correlatable but not reversible
+ *   - userId:    masked email (e.g. ra***@gm***.com) — identifiable but not fully exposed
  *
  * Also adds X-Request-Id to the response header so clients can include it in bug reports.
  * MDC is always cleared in the finally block to prevent context leakage across thread reuse.
@@ -67,20 +65,21 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
         }
         try {
             String token = authHeader.substring(7);
-            return jwtUtil.isValid(token) ? hashEmail(jwtUtil.extractEmail(token)) : "anonymous";
+            return jwtUtil.isValid(token) ? maskEmail(jwtUtil.extractEmail(token)) : "anonymous";
         } catch (Exception e) {
             return "anonymous";
         }
     }
 
-    // SHA-256 of email truncated to 8 hex chars — stable per user, not reversible
-    private String hashEmail(String email) {
-        try {
-            byte[] hash = MessageDigest.getInstance("SHA-256")
-                    .digest(email.getBytes(StandardCharsets.UTF_8));
-            return String.format("%02x%02x%02x%02x", hash[0], hash[1], hash[2], hash[3]);
-        } catch (Exception e) {
-            return "unknown";
-        }
+    // ra***@gm***.com — enough to spot the user in logs without exposing the full email
+    private String maskEmail(String email) {
+        int at = email.indexOf('@');
+        if (at < 0) return "***";
+        String local = email.substring(0, at);
+        String domain = email.substring(at + 1);
+        int dot = domain.lastIndexOf('.');
+        String maskedLocal = (local.length() > 2 ? local.substring(0, 2) : local) + "***";
+        String maskedDomain = (dot > 0 ? domain.substring(0, 1) + "***" + domain.substring(dot) : "***");
+        return maskedLocal + "@" + maskedDomain;
     }
 }

@@ -4,6 +4,7 @@ import com.ghostcoach.dto.ChatMessageDto;
 import com.ghostcoach.model.*;
 import com.ghostcoach.repository.*;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -14,6 +15,7 @@ import java.util.List;
  * the database on every call and injected into the Gemini prompt, so the AI has
  * full conversational context without any server-side session state.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ChatService {
@@ -44,11 +46,13 @@ public class ChatService {
      * @return the assistant's reply as a {@link ChatMessageDto}
      */
     public ChatMessageDto sendMessage(String email, Long sessionId, String userMessage) {
+        log.debug("Chat message received [sessionId={}, msgLen={}]", sessionId, userMessage.length());
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found."));
 
         CoachingSession session = sessionService.getRawSession(email, sessionId);
         List<ChatMessage> history = chatMessageRepository.findBySessionOrderByCreatedAtAsc(session);
+        log.debug("Chat history loaded [sessionId={}, historySize={}]", sessionId, history.size());
 
         // Persist user turn before the API call — if Gemini times out we don't lose the user's message
         ChatMessage userMsg = ChatMessage.builder()
@@ -68,6 +72,7 @@ public class ChatService {
                 .build();
         chatMessageRepository.save(assistantMsg);
 
+        log.info("Chat exchange complete [sessionId={}, replyLen={}]", sessionId, reply.trim().length());
         return ChatMessageDto.from(assistantMsg);
     }
 
@@ -81,9 +86,11 @@ public class ChatService {
      */
     public List<ChatMessageDto> getHistory(String email, Long sessionId) {
         CoachingSession session = sessionService.getRawSession(email, sessionId);
-        return chatMessageRepository.findBySessionOrderByCreatedAtAsc(session)
+        List<ChatMessageDto> messages = chatMessageRepository.findBySessionOrderByCreatedAtAsc(session)
                 .stream()
                 .map(ChatMessageDto::from)
                 .toList();
+        log.debug("Chat history fetched [sessionId={}, count={}]", sessionId, messages.size());
+        return messages;
     }
 }

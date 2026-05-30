@@ -3,6 +3,7 @@ package com.ghostcoach.model;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDateTime;
+import com.ghostcoach.model.SportType;
 
 @Entity
 @Table(name = "coaching_sessions")
@@ -37,6 +38,10 @@ public class CoachingSession {
     private String drillSuggestion;
 
     private String confidenceLevel;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = true)
+    private SportType sport;
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;

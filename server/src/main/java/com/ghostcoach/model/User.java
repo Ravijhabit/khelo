@@ -3,6 +3,8 @@ package com.ghostcoach.model;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "users")
@@ -25,14 +27,11 @@ public class User {
     @Column(nullable = false)
     private String passwordHash;
 
-    @Column(nullable = false)
-    private String sport;
-
-    @Column(nullable = false)
-    private String position;
-
-    @Column(nullable = false)
-    private String experienceLevel;
+    /** Per-sport profile: each entry holds the sport, the player's role in that sport, and their level. */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "user_sport_profiles", joinColumns = @JoinColumn(name = "user_id"))
+    @Builder.Default
+    private List<SportProfile> sportProfiles = new ArrayList<>();
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
