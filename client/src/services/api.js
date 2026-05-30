@@ -1,54 +1,42 @@
 import axios from 'axios'
+import { useAuthStore } from '../store/authStore'
 
 /**
- * Shared Axios instance scoped to /api.
- * Vite's dev server proxy (vite.config.js) forwards /api/* to localhost:8080,
- * so this works identically in development without CORS setup on the backend.
+ * Interceptor-equipped axios instance for all authenticated API calls.
+ * No circular dependency: api.js imports the store; the store imports httpClient
+ * (not api.js), so the dependency graph is a DAG.
  */
 const api = axios.create({
   baseURL: '/api',
 })
 
 /**
- * Request interceptor: automatically attaches the JWT from localStorage to every
- * outgoing request as a Bearer token. This means individual API calls never
- * need to manually pass the Authorization header.
+ * Request interceptor: reads the JWT from the Zustand store via getState()
+ * (the non-reactive, outside-component accessor) and attaches it as a Bearer token.
+ * Every call to sessionsApi or chatApi gets the header automatically.
  */
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
+  const token = useAuthStore.getState().token
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
 
 /**
- * Response interceptor: handles expired or invalid JWT globally.
- * On 401, clears stored credentials and hard-redirects to /login.
- * Using window.location.href instead of React Router's navigate because
- * this interceptor runs outside of React's component tree.
+ * Response interceptor: on 401, wipes the Zustand store (which also clears
+ * localStorage via persist middleware) and redirects to /login.
+ * window.location.href is used instead of React Router because this interceptor
+ * runs outside of the React component tree.
  */
 api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      localStorage.removeItem('token')
-      localStorage.removeItem('user')
+      useAuthStore.getState().logout()
       window.location.href = '/login'
     }
     return Promise.reject(err)
   }
 )
-
-/** Authentication endpoints — no JWT required (permitted in SecurityConfig). */
-export const authApi = {
-  /** Creates a new player account. Returns { token, user }. */
-  register: (data) => api.post('/auth/register', data),
-
-  /** Authenticates with email + password. Returns { token, user }. */
-  login: (data) => api.post('/auth/login', data),
-
-  /** Fetches the current player's profile by validating the stored JWT. */
-  me: () => api.get('/auth/me'),
-}
 
 /** Coaching session endpoints — all require a valid JWT. */
 export const sessionsApi = {
