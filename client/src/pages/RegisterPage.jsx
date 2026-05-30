@@ -1,13 +1,19 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { Dumbbell } from 'lucide-react'
+import { Dumbbell, X } from 'lucide-react'
 
+// Only sports supported by the AI analysis backend
 const SPORTS = {
-  Cricket: ['Batsman', 'Bowler', 'All-Rounder', 'Wicket Keeper'],
-  Football: ['Goalkeeper', 'Defender', 'Midfielder', 'Forward'],
+  Cricket:    ['Batsman', 'Bowler', 'All-Rounder', 'Wicket Keeper'],
   Basketball: ['Point Guard', 'Shooting Guard', 'Small Forward', 'Power Forward', 'Center'],
-  Badminton: ['Singles Player', 'Doubles Player', 'Mixed Doubles Player'],
+  Badminton:  ['Singles Player', 'Doubles Player', 'Mixed Doubles Player'],
+}
+
+const SPORT_COLORS = {
+  Cricket:    { active: 'bg-green-600 border-green-500 text-white', dot: 'bg-green-300', card: 'border-green-500/30 bg-green-500/5' },
+  Basketball: { active: 'bg-orange-600 border-orange-500 text-white', dot: 'bg-orange-300', card: 'border-orange-500/30 bg-orange-500/5' },
+  Badminton:  { active: 'bg-yellow-600 border-yellow-500 text-white', dot: 'bg-yellow-300', card: 'border-yellow-500/30 bg-yellow-500/5' },
 }
 
 const LEVELS = ['Beginner', 'Intermediate', 'Advanced']
@@ -19,26 +25,47 @@ export default function RegisterPage() {
     name: '',
     email: '',
     password: '',
-    sport: '',
-    position: '',
-    experienceLevel: '',
+    sportProfiles: [],   // [{ sport, position, experienceLevel }]
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const set = (key, value) => {
+  const addSport = (sport) => {
+    if (form.sportProfiles.some((p) => p.sport === sport)) return
     setForm((prev) => ({
       ...prev,
-      [key]: value,
-      ...(key === 'sport' ? { position: '' } : {}),
+      sportProfiles: [...prev.sportProfiles, { sport, position: '', experienceLevel: '' }],
     }))
   }
+
+  const removeSport = (sport) => {
+    setForm((prev) => ({
+      ...prev,
+      sportProfiles: prev.sportProfiles.filter((p) => p.sport !== sport),
+    }))
+  }
+
+  const updateProfile = (sport, key, value) => {
+    setForm((prev) => ({
+      ...prev,
+      sportProfiles: prev.sportProfiles.map((p) =>
+        p.sport === sport ? { ...p, [key]: value } : p
+      ),
+    }))
+  }
+
+  const set = (key, value) => setForm((prev) => ({ ...prev, [key]: value }))
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
-    if (!form.sport || !form.position || !form.experienceLevel) {
-      setError('Please complete all fields.')
+    if (!form.sportProfiles.length) {
+      setError('Select at least one sport.')
+      return
+    }
+    const incomplete = form.sportProfiles.find((p) => !p.position || !p.experienceLevel)
+    if (incomplete) {
+      setError(`Complete the position and level for ${incomplete.sport}.`)
       return
     }
     setLoading(true)
@@ -52,9 +79,11 @@ export default function RegisterPage() {
     }
   }
 
+  const selectedSports = form.sportProfiles.map((p) => p.sport)
+
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4 py-10">
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-lg">
         <div className="flex flex-col items-center mb-8">
           <div className="flex items-center gap-2 mb-2">
             <Dumbbell className="w-8 h-8 text-indigo-400" />
@@ -74,7 +103,7 @@ export default function RegisterPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-5">
             <Field label="Full Name">
               <input
                 type="text"
@@ -109,66 +138,110 @@ export default function RegisterPage() {
               />
             </Field>
 
-            <Field label="Sport">
-              <div className="grid grid-cols-2 gap-2">
-                {Object.keys(SPORTS).map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => set('sport', s)}
-                    className={`py-2 px-3 rounded-lg text-sm font-medium border transition-colors ${
-                      form.sport === s
-                        ? 'bg-indigo-600 border-indigo-500 text-white'
-                        : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-500'
-                    }`}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </Field>
-
-            {form.sport && (
-              <Field label="Position / Role">
-                <select
-                  required
-                  value={form.position}
-                  onChange={(e) => set('position', e.target.value)}
-                  className="input"
-                >
-                  <option value="">Select position</option>
-                  {SPORTS[form.sport].map((p) => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
-              </Field>
-            )}
-
-            <Field label="Experience Level">
+            {/* Sport picker */}
+            <Field label="Sports" hint="Select all you train in">
               <div className="grid grid-cols-3 gap-2">
-                {LEVELS.map((l) => (
-                  <button
-                    key={l}
-                    type="button"
-                    onClick={() => set('experienceLevel', l)}
-                    className={`py-2 px-3 rounded-lg text-sm font-medium border transition-colors ${
-                      form.experienceLevel === l
-                        ? 'bg-indigo-600 border-indigo-500 text-white'
-                        : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-500'
-                    }`}
-                  >
-                    {l}
-                  </button>
-                ))}
+                {Object.keys(SPORTS).map((sport) => {
+                  const on = selectedSports.includes(sport)
+                  const colors = SPORT_COLORS[sport]
+                  return (
+                    <button
+                      key={sport}
+                      type="button"
+                      onClick={() => (on ? removeSport(sport) : addSport(sport))}
+                      className={`py-2 px-3 rounded-lg text-sm font-medium border transition-colors ${
+                        on
+                          ? colors.active
+                          : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-500'
+                      }`}
+                    >
+                      {sport}
+                    </button>
+                  )
+                })}
               </div>
             </Field>
+
+            {/* Per-sport profile cards */}
+            {form.sportProfiles.map((profile) => {
+              const colors = SPORT_COLORS[profile.sport]
+              return (
+                <div
+                  key={profile.sport}
+                  className={`rounded-xl border p-4 space-y-3 ${colors.card}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${colors.dot}`} />
+                      <span className="text-sm font-semibold text-white">{profile.sport}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeSport(profile.sport)}
+                      className="p-1 rounded text-gray-500 hover:text-red-400 transition-colors"
+                      aria-label={`Remove ${profile.sport}`}
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Position */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-400 mb-1">
+                      Position / Role
+                    </label>
+                    <select
+                      value={profile.position}
+                      onChange={(e) => updateProfile(profile.sport, 'position', e.target.value)}
+                      className="input text-xs"
+                    >
+                      <option value="">Select your role</option>
+                      {SPORTS[profile.sport].map((p) => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Experience level */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-400 mb-1">
+                      Experience Level
+                    </label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {LEVELS.map((level) => (
+                        <button
+                          key={level}
+                          type="button"
+                          onClick={() => updateProfile(profile.sport, 'experienceLevel', level)}
+                          className={`py-1.5 rounded-md text-xs font-medium border transition-colors ${
+                            profile.experienceLevel === level
+                              ? 'bg-indigo-600 border-indigo-500 text-white'
+                              : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-300'
+                          }`}
+                        >
+                          {level}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+
+            {form.sportProfiles.length === 0 && (
+              <p className="text-xs text-gray-600 text-center py-2">
+                Select a sport above to set up your profile
+              </p>
+            )}
 
             <button
               type="submit"
               disabled={loading}
               className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2 mt-2"
             >
-              {loading && <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+              {loading && (
+                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              )}
               {loading ? 'Creating account...' : 'Create account'}
             </button>
           </form>
@@ -185,7 +258,7 @@ export default function RegisterPage() {
       <style>{`
         .input {
           width: 100%;
-          padding: 0.625rem 0.875rem;
+          padding: 0.5rem 0.75rem;
           background: #111827;
           border: 1px solid #374151;
           border-radius: 0.5rem;
@@ -203,10 +276,13 @@ export default function RegisterPage() {
   )
 }
 
-function Field({ label, children }) {
+function Field({ label, hint, children }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-gray-300 mb-1.5">{label}</label>
+      <div className="flex items-baseline justify-between mb-1.5">
+        <label className="block text-sm font-medium text-gray-300">{label}</label>
+        {hint && <span className="text-xs text-gray-500">{hint}</span>}
+      </div>
       {children}
     </div>
   )

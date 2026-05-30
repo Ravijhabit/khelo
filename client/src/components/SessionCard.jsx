@@ -9,6 +9,24 @@ const SCORE_BG = (s) => {
   return 'bg-red-500/20 text-red-400'
 }
 
+const SPORT_META = {
+  BADMINTON:  { emoji: '🏸', className: 'bg-yellow-500/20 text-yellow-400' },
+  CRICKET:    { emoji: '🏏', className: 'bg-green-500/20 text-green-400' },
+  BASKETBALL: { emoji: '🏀', className: 'bg-orange-500/20 text-orange-400' },
+}
+
+function SportBadge({ sport }) {
+  if (!sport) return null
+  const meta = SPORT_META[sport] ?? { emoji: '🏅', className: 'bg-gray-700 text-gray-400' }
+  const label = sport.charAt(0) + sport.slice(1).toLowerCase()
+  return (
+    <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex items-center gap-1 ${meta.className}`}>
+      <span role="img" aria-hidden="true">{meta.emoji}</span>
+      {label}
+    </span>
+  )
+}
+
 export default function SessionCard({ session }) {
   const navigate = useNavigate()
   const [expanded, setExpanded] = useState(false)
@@ -45,10 +63,11 @@ export default function SessionCard({ session }) {
 
         {/* Meta */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className={`text-sm font-bold px-2 py-0.5 rounded-full ${SCORE_BG(session.overallScore)}`}>
               {session.overallScore}/10
             </span>
+            <SportBadge sport={session.sport} />
           </div>
           <div className="flex items-center gap-1 text-xs text-gray-500 mb-1">
             <Calendar className="w-3 h-3" />

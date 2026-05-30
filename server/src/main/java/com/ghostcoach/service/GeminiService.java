@@ -3,10 +3,12 @@ package com.ghostcoach.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ghostcoach.dto.FeedbackDto;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import com.ghostcoach.util.JsonUtil;
 import java.util.*;
 
 /**
@@ -15,6 +17,7 @@ import java.util.*;
  * deserializing the response — nothing else. Prompt construction lives
  * in {@link PromptBuilderService} to keep this class focused on the transport layer.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class GeminiService {
@@ -51,12 +54,17 @@ public class GeminiService {
         Map<String, Object> request = buildVisionRequest(imageBytes, mimeType, prompt);
         String url = apiUrl + "?key=" + apiKey;
 
+        log.info("Calling Gemini Vision API [imageBytes={}B, mimeType={}]", imageBytes.length, mimeType);
+        long start = System.currentTimeMillis();
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> response = restTemplate.postForObject(url, request, Map.class);
             String text = extractText(response);
-            return parseFeedback(text);
+            FeedbackDto feedback = parseFeedback(text);
+            log.info("Gemini Vision API success [{}ms, score={}]", System.currentTimeMillis() - start, feedback.getOverallScore());
+            return feedback;
         } catch (Exception e) {
+            log.error("Gemini Vision API failed [{}ms] — {}", System.currentTimeMillis() - start, e.getMessage(), e);
             throw new RuntimeException("Gemini API call failed: " + e.getMessage(), e);
         }
     }
@@ -79,11 +87,16 @@ public class GeminiService {
         Map<String, Object> request = buildTextRequest(prompt);
         String url = apiUrl + "?key=" + apiKey;
 
+        log.debug("Calling Gemini Chat API [promptLen={}]", prompt.length());
+        long start = System.currentTimeMillis();
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> response = restTemplate.postForObject(url, request, Map.class);
-            return extractText(response);
+            String reply = extractText(response);
+            log.info("Gemini Chat API success [{}ms, replyLen={}]", System.currentTimeMillis() - start, reply.length());
+            return reply;
         } catch (Exception e) {
+            log.error("Gemini Chat API failed [{}ms] — {}", System.currentTimeMillis() - start, e.getMessage(), e);
             throw new RuntimeException("Gemini chat API call failed: " + e.getMessage(), e);
         }
     }
@@ -154,10 +167,7 @@ public class GeminiService {
      * {@code responseMimeType: application/json} on certain prompts or model versions.
      */
     private FeedbackDto parseFeedback(String text) {
-        text = text.trim();
-        if (text.startsWith("```")) {
-            text = text.replaceAll("(?s)^```(?:json)?\\s*", "").replaceAll("(?s)```\\s*$", "").trim();
-        }
+        text = JsonUtil.stripMarkdownFences(text);
         try {
             return objectMapper.readValue(text, FeedbackDto.class);
         } catch (Exception e) {

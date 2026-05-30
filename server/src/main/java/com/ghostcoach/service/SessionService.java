@@ -9,10 +9,13 @@ import com.ghostcoach.repository.CoachingSessionRepository;
 import com.ghostcoach.repository.UserRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.ghostcoach.model.SportType;
+import com.ghostcoach.util.ImageUtil;
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.List;
@@ -23,6 +26,7 @@ import java.util.UUID;
  * session persistence, and retrieval. Also serves as the gateway for {@link ChatService}
  * to fetch raw session entities without duplicating ownership checks.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class SessionService {
@@ -62,11 +66,14 @@ public class SessionService {
      * @param file  the uploaded stance image (validated for MIME type here + client-side)
      * @return {@link SessionResponse} with the nested {@link FeedbackDto} for immediate display
      */
-    public SessionResponse analyze(String email, MultipartFile file) throws IOException {
+    public SessionResponse analyze(String email, MultipartFile file, SportType sport) throws IOException {
+        log.info("Stance analysis started [sport={}, fileSize={}B, contentType={}]",
+                sport, file.getSize(), file.getContentType());
         User user = getUser(email);
 
         String contentType = file.getContentType();
         if (contentType == null || (!contentType.equals("image/jpeg") && !contentType.equals("image/png"))) {
+            log.warn("Analysis rejected — unsupported content type [contentType={}]", contentType);
             throw new RuntimeException("Only JPEG and PNG images are accepted.");
         }
 
@@ -75,13 +82,15 @@ public class SessionService {
         String filename = UUID.randomUUID() + ext;
         Path filePath = Paths.get(uploadDir, filename);
         Files.write(filePath, file.getBytes());
+        log.debug("Image saved [filename={}]", filename);
 
-        String prompt = promptBuilder.buildAnalysisPrompt(user);
+        String prompt = promptBuilder.buildAnalysisPrompt(user, sport);
         FeedbackDto feedback = geminiService.analyzeStance(file.getBytes(), contentType, prompt);
 
         // Serialize lists as JSON strings for storage in a single TEXT column
         CoachingSession session = CoachingSession.builder()
                 .user(user)
+                .sport(sport)
                 .imagePath(filename)
                 .overallScore(feedback.getOverallScore())
                 .strengths(objectMapper.writeValueAsString(feedback.getStrengths()))
@@ -92,7 +101,8 @@ public class SessionService {
                 .build();
 
         sessionRepository.save(session);
-        // Return with nested FeedbackDto so the frontend can display results immediately
+        log.info("Session created [sessionId={}, sport={}, score={}, confidence={}]",
+                session.getId(), sport, feedback.getOverallScore(), feedback.getConfidenceLevel());
         return SessionResponse.fromWithFeedback(session, feedback);
     }
 
@@ -105,10 +115,12 @@ public class SessionService {
      */
     public List<SessionResponse> listSessions(String email) {
         User user = getUser(email);
-        return sessionRepository.findByUserOrderByCreatedAtDesc(user)
+        List<SessionResponse> sessions = sessionRepository.findByUserOrderByCreatedAtDesc(user)
                 .stream()
                 .map(SessionResponse::from)
                 .toList();
+        log.debug("Listed sessions [count={}]", sessions.size());
+        return sessions;
     }
 
     /**

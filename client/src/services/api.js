@@ -38,12 +38,17 @@ api.interceptors.response.use(
   }
 )
 
+/** Returns the list of supported sports from the backend — drives the SportSelector. */
+export const sportsApi = {
+  list: () => api.get('/sports'),
+}
+
 /** Coaching session endpoints — all require a valid JWT. */
 export const sessionsApi = {
   /**
-   * Uploads an image and triggers Gemini analysis.
-   * Must be sent as multipart/form-data with the file under the "image" field.
-   * Returns { id, feedback: { overallScore, strengths, ... } }.
+   * Uploads an image + sport and triggers Gemini analysis.
+   * Must be sent as multipart/form-data with "image" and "sport" fields.
+   * Returns { id, sport, feedback: { overallScore, strengths, ... } }.
    */
   upload: (formData) =>
     api.post('/sessions', formData, {
