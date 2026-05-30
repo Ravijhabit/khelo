@@ -2,6 +2,7 @@ package com.ghostcoach.controller;
 
 import com.ghostcoach.dto.SessionResponse;
 import com.ghostcoach.service.SessionService;
+import com.ghostcoach.util.ImageUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.*;
 import org.springframework.security.core.Authentication;
@@ -65,9 +66,7 @@ public class SessionController {
     public ResponseEntity<byte[]> getImage(@PathVariable Long id, Authentication auth) throws IOException {
         byte[] imageBytes = sessionService.getSessionImage(auth.getName(), id);
         SessionResponse session = sessionService.getSession(auth.getName(), id);
-        MediaType mediaType = session.getImagePath() != null && session.getImagePath().endsWith(".png")
-                ? MediaType.IMAGE_PNG
-                : MediaType.IMAGE_JPEG;
+        MediaType mediaType = ImageUtil.getMediaType(session.getImagePath());
         return ResponseEntity.ok().contentType(mediaType).body(imageBytes);
     }
 }
