@@ -2,6 +2,13 @@ import { useState, useEffect, useRef } from 'react'
 import { chatApi } from '../services/api'
 import { Send, Bot, User, Loader2 } from 'lucide-react'
 
+/**
+ * Renders a coaching chat thread for a specific session.
+ * Loads prior message history on mount and appends new exchanges in real time.
+ * The AI has full session context on the backend — this component is purely UI.
+ *
+ * @param {string|number} sessionId - the coaching session to chat about
+ */
 export default function ChatBox({ sessionId }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -9,6 +16,11 @@ export default function ChatBox({ sessionId }) {
   const [fetching, setFetching] = useState(true)
   const bottomRef = useRef(null)
 
+  /**
+   * Fetches the full conversation history for this session on mount.
+   * Errors are silently swallowed — the chat just starts empty rather than
+   * blocking the player with an error they can't act on.
+   */
   useEffect(() => {
     chatApi
       .history(sessionId)
@@ -17,14 +29,25 @@ export default function ChatBox({ sessionId }) {
       .finally(() => setFetching(false))
   }, [sessionId])
 
+  /**
+   * Auto-scrolls to the latest message whenever the messages array grows.
+   * The ref sits on a zero-height div at the bottom of the message list.
+   */
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  /**
+   * Sends the player's message and appends the AI reply.
+   * Optimistically adds the user bubble before the API call completes so
+   * the UI feels instant. Falls back to an inline error bubble rather than
+   * a full-page error state — the player can simply try again.
+   */
   const send = async () => {
     const text = input.trim()
     if (!text || loading) return
     setInput('')
+    // Optimistic update — show the user's message immediately
     const userMsg = { role: 'user', content: text, createdAt: new Date().toISOString() }
     setMessages((prev) => [...prev, userMsg])
     setLoading(true)
@@ -41,6 +64,10 @@ export default function ChatBox({ sessionId }) {
     }
   }
 
+  /**
+   * Submits on Enter (without Shift) to match chat app conventions.
+   * Shift+Enter inserts a newline for multi-line questions.
+   */
   const handleKey = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -58,8 +85,8 @@ export default function ChatBox({ sessionId }) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto space-y-4 mb-4 max-h-96 pr-1">
+        {/* Empty state with suggested questions to lower the barrier to first engagement */}
         {messages.length === 0 && (
           <div className="text-center py-8">
             <Bot className="w-8 h-8 text-gray-700 mx-auto mb-2" />
@@ -102,6 +129,7 @@ export default function ChatBox({ sessionId }) {
           </div>
         ))}
 
+        {/* Typing indicator while waiting for AI reply */}
         {loading && (
           <div className="flex gap-3">
             <div className="w-7 h-7 rounded-full bg-gray-800 flex items-center justify-center shrink-0">
@@ -114,10 +142,10 @@ export default function ChatBox({ sessionId }) {
             </div>
           </div>
         )}
+        {/* Scroll anchor — always kept at the bottom of the message list */}
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
       <div className="flex gap-2">
         <textarea
           value={input}

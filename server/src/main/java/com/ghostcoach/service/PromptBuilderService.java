@@ -6,9 +6,34 @@ import com.ghostcoach.model.User;
 import org.springframework.stereotype.Service;
 import java.util.List;
 
+/**
+ * Builds the AI prompts for both stance analysis and coaching chat.
+ * All personalization (sport, position, experience level) is injected here
+ * so {@link GeminiService} remains a pure transport layer with no domain knowledge.
+ *
+ * <p>Prompt design philosophy:
+ * <ul>
+ *   <li>Explicit JSON schema in the prompt — removes ambiguity about the expected output shape.</li>
+ *   <li>Player profile injected as context — a Beginner Batsman and an Advanced Goalkeeper
+ *       receive meaningfully different feedback from the same image.</li>
+ *   <li>Role instruction ("You are an expert X coach") grounds the model's persona.</li>
+ * </ul>
+ */
 @Service
 public class PromptBuilderService {
 
+    /**
+     * Builds the stance analysis prompt for a given player.
+     * The prompt is intentionally verbose — explicit schema + guidelines reduce
+     * hallucination and ensure all 6 feedback fields are always populated.
+     *
+     * <p>The sport and experience level are repeated in multiple places within
+     * the prompt because LLMs respond to emphasis; a single mention mid-prompt
+     * is often ignored in favour of more prominent instructions.
+     *
+     * @param user the authenticated player whose profile drives personalization
+     * @return a complete, ready-to-send prompt string for the Gemini vision call
+     */
     public String buildAnalysisPrompt(User user) {
         return String.format("""
                 You are an expert %s coaching assistant analyzing a stance photo.
@@ -46,6 +71,25 @@ public class PromptBuilderService {
         );
     }
 
+    /**
+     * Builds the coaching chat prompt by injecting the session's full coaching report
+     * and the entire conversation history into a single-turn prompt.
+     *
+     * <p>This avoids Gemini's multi-turn {@code contents} API (which requires careful
+     * role alternation and state management) in favour of a simpler "summarised context"
+     * approach. Trade-off: the prompt grows with each message, but sessions are short
+     * enough (typically 5–10 exchanges) that this is not a practical concern.
+     *
+     * <p>The session report is injected as a literal block so the AI has access to
+     * the exact strengths, areas to improve, and priority fix without needing to
+     * "remember" a previous API call — this is stateless by design.
+     *
+     * @param user        the player whose profile grounds the coaching persona
+     * @param session     the coaching session the player is asking about
+     * @param history     all prior messages in this session's chat thread (oldest first)
+     * @param userMessage the new question from the player
+     * @return a fully-assembled prompt ready to send to the Gemini text model
+     */
     public String buildChatPrompt(User user, CoachingSession session, List<ChatMessage> history, String userMessage) {
         StringBuilder historyBlock = new StringBuilder();
         for (ChatMessage msg : history) {

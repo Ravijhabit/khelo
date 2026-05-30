@@ -9,6 +9,12 @@ import org.springframework.web.client.RestTemplate;
 
 import java.util.*;
 
+/**
+ * Thin wrapper around the Gemini Vision API.
+ * Responsible for building the HTTP request payload, sending it, and
+ * deserializing the response — nothing else. Prompt construction lives
+ * in {@link PromptBuilderService} to keep this class focused on the transport layer.
+ */
 @Service
 @RequiredArgsConstructor
 public class GeminiService {
@@ -22,6 +28,21 @@ public class GeminiService {
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
 
+    /**
+     * Sends an image + prompt to Gemini's vision model and returns a structured coaching report.
+     * The image is sent as a base64-encoded inline data part alongside the text prompt —
+     * Gemini's multimodal API does not require a separate file upload step.
+     *
+     * <p>Using {@code responseMimeType: "application/json"} in the generation config
+     * instructs Gemini to return a valid JSON document rather than prose wrapped in
+     * markdown code fences, which eliminates the need for regex stripping in most cases.
+     *
+     * @param imageBytes raw bytes of the uploaded image
+     * @param mimeType   "image/jpeg" or "image/png" — passed to Gemini as the inline data type
+     * @param prompt     the coaching analysis prompt from {@link PromptBuilderService}
+     * @return parsed {@link FeedbackDto} with all 6 coaching report fields populated
+     * @throws RuntimeException if the API key is missing, the HTTP call fails, or the JSON cannot be parsed
+     */
     public FeedbackDto analyzeStance(byte[] imageBytes, String mimeType, String prompt) {
         if (apiKey == null || apiKey.isBlank()) {
             throw new RuntimeException("GEMINI_API_KEY is not configured. Please set it in your .env file.");
@@ -40,6 +61,16 @@ public class GeminiService {
         }
     }
 
+    /**
+     * Sends a text-only prompt to Gemini for the coaching chat feature.
+     * The full session context and conversation history are baked into the prompt
+     * by {@link PromptBuilderService#buildChatPrompt} rather than using Gemini's
+     * multi-turn {@code contents} array — simpler to implement and sufficient for
+     * sessions with a small number of messages.
+     *
+     * @param prompt context-rich prompt including session report + chat history
+     * @return the coach's reply as a plain string (trimmed by the caller)
+     */
     public String chat(String prompt) {
         if (apiKey == null || apiKey.isBlank()) {
             throw new RuntimeException("GEMINI_API_KEY is not configured.");
@@ -57,6 +88,11 @@ public class GeminiService {
         }
     }
 
+    /**
+     * Constructs the Gemini API request body for a multimodal (text + image) call.
+     * Temperature 0.3 keeps coaching feedback deterministic and factual — higher
+     * values produce more creative but less reliable technique analysis.
+     */
     private Map<String, Object> buildVisionRequest(byte[] imageBytes, String mimeType, String prompt) {
         String base64Image = Base64.getEncoder().encodeToString(imageBytes);
 
@@ -71,11 +107,16 @@ public class GeminiService {
                 "generationConfig", Map.of(
                         "temperature", 0.3,
                         "maxOutputTokens", 1024,
+                        // Forces JSON-only output — prevents markdown code fences in responses
                         "responseMimeType", "application/json"
                 )
         );
     }
 
+    /**
+     * Constructs the Gemini API request body for a text-only chat call.
+     * Higher temperature (0.7) than analysis to allow more natural coaching language.
+     */
     private Map<String, Object> buildTextRequest(String prompt) {
         Map<String, Object> textPart = Map.of("text", prompt);
         Map<String, Object> content = Map.of("parts", List.of(textPart));
@@ -89,6 +130,12 @@ public class GeminiService {
         );
     }
 
+    /**
+     * Navigates the nested Gemini response structure to extract the raw text output.
+     * Path: response → candidates[0] → content → parts[0] → text
+     * Wraps any navigation failure with a clear error that includes the raw response
+     * for easier debugging.
+     */
     @SuppressWarnings("unchecked")
     private String extractText(Map<String, Object> response) {
         try {
@@ -101,8 +148,12 @@ public class GeminiService {
         }
     }
 
+    /**
+     * Deserializes the Gemini text output into a {@link FeedbackDto}.
+     * Defensively strips markdown code fences in case Gemini ignores
+     * {@code responseMimeType: application/json} on certain prompts or model versions.
+     */
     private FeedbackDto parseFeedback(String text) {
-        // Strip markdown code fences if Gemini wraps the JSON
         text = text.trim();
         if (text.startsWith("```")) {
             text = text.replaceAll("(?s)^```(?:json)?\\s*", "").replaceAll("(?s)```\\s*$", "").trim();
